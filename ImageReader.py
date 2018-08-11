@@ -8,7 +8,7 @@ import numpy as np
 
 
 
-def ReadSegmentationImages(folder, depthPd = None, readMasks = False, applyMedianFilter = False, im_height=101, im_width=101):
+def ReadSegmentationImages(folder, depthPd = None, readMasks = True, applyMedianFilter = False, im_height=101, im_width=101):
     """
     Reads images from a folder.
     
@@ -29,7 +29,10 @@ def ReadSegmentationImages(folder, depthPd = None, readMasks = False, applyMedia
     imgIds = next(os.walk(imgFolder))[2]
     
     src_images = np.zeros((len(imgIds), im_height, im_width, 1), dtype=np.uint8)
-    src_masks = np.zeros((len(imgIds), im_height, im_width, 1), dtype=np.bool)
+    
+    if readMasks:
+        src_masks = np.zeros((len(imgIds), im_height, im_width, 1), dtype=np.bool)
+    
     if depthPd is not None:
         depths = np.zeros( (len(imgIds), 1,1,1) , dtype=np.float32)
         
@@ -56,11 +59,17 @@ def ReadSegmentationImages(folder, depthPd = None, readMasks = False, applyMedia
         x = x.reshape( (im_height,im_width,1) )
 
         src_images[n] = x[:,:,0:1]
-        
-        mask = img_to_array(load_img( os.path.join(maskFolder, id_) ))
-        src_masks[n] = mask[:,:,0:1]
+        if readMasks:
+            mask = img_to_array(load_img( os.path.join(maskFolder, id_) ))
+            src_masks[n] = mask[:,:,0:1]
 
-    if depthPd is not None:    
-        return src_images, src_masks, depths
+    if depthPd is not None:
+        if readMasks:
+            return src_images, src_masks, depths
+        else:
+            return src_images, depths
     else:
-        return src_images, src_masks
+        if readMasks:
+            return src_images, src_masks
+        else:
+            return src_images

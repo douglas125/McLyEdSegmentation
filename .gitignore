@@ -10,3 +10,4 @@ sample_submission.csv
 train.csv
 test.zip
 train.zip
+model-*.*
