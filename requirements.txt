@@ -1,0 +1,8 @@
+tqdm
+kaggle
+keras
+pandas
+numpy
+scipy
+matplotlib
+pydot

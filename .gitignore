@@ -1,0 +1,12 @@
+tgs-salt-identification-challenge/
+content/
+.ipynb_checkpoints/
+__pycache__/
+.~TGSSeismic.ipynb
+*.zip
+model.png
+depths.csv
+sample_submission.csv
+train.csv
+test.zip
+train.zip
