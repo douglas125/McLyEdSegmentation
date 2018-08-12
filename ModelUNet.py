@@ -242,6 +242,55 @@ def RDC(s, outChannels, ksize = (3,3)):
     c1 = Add() ([s, c1])
     return c1    
 
+
+#Proper IOU evaluation Callback
+import logging
+
+from sklearn.metrics import roc_auc_score
+from keras.callbacks import Callback
+
+
+class IntervalEvaluation(Callback):
+    def __init__(self, validation_data=(), interval=10):
+        super(Callback, self).__init__()
+
+        self.interval = interval
+        self.X_val, self.y_val = validation_data
+        self.score_list=[]
+
+    def on_epoch_end(self, epoch, logs={}):
+        if epoch % self.interval == 0:
+            y_pred = self.model.predict(self.X_val, verbose=1)
+            #first we have to threshhold
+            t=0.5
+            IOU_list=[]
+            for j in range(y_pred.shape[0]):
+                y_pred_ = np.array(y_pred[j,:,:] > t, dtype=bool)
+                y_val_=np.array(self.y_val[j,:,:], dtype=bool)
+                overlap = y_pred_*y_val_ # Logical AND
+                union = y_pred_ + y_val_ # Logical OR
+                IOU = overlap.sum()/float(union.sum())
+                IOU_list.append(IOU)
+            #now we take different threshholds, these threshholds 
+            #basically determine if our IOU consitutes as a "true positiv"
+            #or not 
+            prec_list=[]
+            for IOU_t in np.arange(0.5, 1.0, 0.05):
+                #get true positives, aka all examples where the IOU is larger than the threshhold
+                TP=np.sum(np.asarray(IOU_list)>IOU_t)
+                #calculate the current precision, by devididing by the total number of examples ( pretty sure this is correct :D)
+                #they where writing the denominator as TP+FP+FN but that doesnt really make sens becasue there are no False postivies i think
+                Prec=TP/len(IOU_list)
+                prec_list.append(Prec)
+
+            prec_score=np.mean(prec_list)
+            print('Accurate validation score is {}'.format(prec_score))
+            
+            self.score_list.append(prec_score)
+# (snip)
+
+
+
 # src: https://www.kaggle.com/aglotero/another-iou-metric
 def IoU(y_true_in, y_pred_in, print_table=False):
     labels = y_true_in

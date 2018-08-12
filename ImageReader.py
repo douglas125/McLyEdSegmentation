@@ -8,12 +8,13 @@ import numpy as np
 
 
 def ReadSegmentationImages(folder, depthPd = None, readMasks = True, applyMedianFilter = False, 
-                           im_height=101, im_width=101, standardize = True):
+                           im_height=101, im_width=101):
     """
     Reads images from a folder.
     
     Expects images with dimensions width, height
     depthPd - Pandas dataframe containing ids and corresponding depths, with entry 'id', and depth is 'z'
+    desiredStd - desired std dev. if zero, recomputes and returns mean and stddev
     
     
     Expected structure:
@@ -64,8 +65,7 @@ def ReadSegmentationImages(folder, depthPd = None, readMasks = True, applyMedian
             mask = img_to_array(load_img( os.path.join(maskFolder, id_) ))
             src_masks[n] = mask[:,:,0:1]
 
-    if standardize:
-        src_images = (src_images-np.mean(src_images))/(np.std(src_images)*2.0)
+
                  
     if depthPd is not None:
         if readMasks:
