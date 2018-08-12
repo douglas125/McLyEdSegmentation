@@ -1,5 +1,4 @@
 from keras.preprocessing.image import ImageDataGenerator, array_to_img, img_to_array, load_img
-from keras.preprocessing.image import ImageDataGenerator
 
 from tqdm import tqdm
 from scipy.signal import medfilt2d
@@ -8,7 +7,8 @@ import numpy as np
 
 
 
-def ReadSegmentationImages(folder, depthPd = None, readMasks = True, applyMedianFilter = False, im_height=101, im_width=101):
+def ReadSegmentationImages(folder, depthPd = None, readMasks = True, applyMedianFilter = False, 
+                           im_height=101, im_width=101, standardize = True):
     """
     Reads images from a folder.
     
@@ -55,6 +55,7 @@ def ReadSegmentationImages(folder, depthPd = None, readMasks = True, applyMedian
         #try median filtering
         if applyMedianFilter:
             x = medfilt2d(x)
+           
             
         x = x.reshape( (im_height,im_width,1) )
 
@@ -63,6 +64,9 @@ def ReadSegmentationImages(folder, depthPd = None, readMasks = True, applyMedian
             mask = img_to_array(load_img( os.path.join(maskFolder, id_) ))
             src_masks[n] = mask[:,:,0:1]
 
+    if standardize:
+        src_images = (src_images-np.mean(src_images))/(np.std(src_images)*2.0)
+                 
     if depthPd is not None:
         if readMasks:
             return src_images, src_masks, depths

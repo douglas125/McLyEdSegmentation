@@ -1,7 +1,7 @@
 from keras.models import Model, load_model
 from keras.layers import Input, BatchNormalization, ZeroPadding2D, Add, Activation
 from keras.layers.core import Lambda
-from keras.layers.convolutional import Conv2D, Conv2DTranspose
+from keras.layers.convolutional import Conv2D, Conv2DTranspose, SeparableConv2D
 from keras.layers.pooling import MaxPooling2D
 from keras.layers.merge import concatenate
 from keras.callbacks import EarlyStopping, ModelCheckpoint, LearningRateScheduler
@@ -21,17 +21,16 @@ def _expand(tensor111, dim1, dim2):
     ans = K.repeat_elements(ans, dim2, 2)
     return ans
 
-def BuildUNet(convFunction, nFilter = 8, net_depth = 4, input_img_shape = (128,128,1), nBorderRefinementConvs = 2 ):
+def BuildUNet(convFunction, nFilter = 8, net_depth = 4, input_img_shape = (128,128,1), encoderSquash = 0, nBorderRefinementConvs = 2 ):
     """
     Builds U-Net model
     
     Assumes image and depth information already come in normalized
     
     nBorderRefinementConvs - number of convolutions after output has been computed (after last upsample)
+    encoderSquash - Squash encoder outputs at each level to have this number of channels. Set to zero to skip squashing.
     """
     
-    convFunction = ApplyConv
-
     inputImg = Input(input_img_shape)
     inputDepth = Input( (1,1,1) )
     
@@ -47,7 +46,12 @@ def BuildUNet(convFunction, nFilter = 8, net_depth = 4, input_img_shape = (128,1
     curLayer = convFunction(curLayer, nFilter)
     for k in range(net_depth):
         curLayer = convFunction(curLayer, (2**(1+k))*nFilter)
-        uLayers.append(curLayer)
+        if encoderSquash > 0:
+            squashedLayer = Conv2D(encoderSquash, (1,1), activation=None, padding='same') (curLayer)
+            uLayers.append(squashedLayer)
+        else:
+            uLayers.append(curLayer)
+            
         curLayer = MaxPooling2D((2, 2)) (curLayer)
 
     #take depth into account in the deepest layer
@@ -184,7 +188,7 @@ def ApplyInception(s, outChannels, ksize = (3,3), padType = 'same'  ):
     o = BatchNormalization() (o)
     return o
 
-def ApplyDilatedConvs(s, outChannels, ksize = (3,3), padType = 'same'  ):
+def ApplyDC(s, outChannels, ksize = (3,3), padType = 'same'  ):
     s = Conv2D(outChannels, ksize, activation=NonLinearActivation, padding=padType) (s)
     s = BatchNormalization() (s)
     nChannels = outChannels // 2
@@ -207,12 +211,32 @@ def ApplyDilatedConvs(s, outChannels, ksize = (3,3), padType = 'same'  ):
     o = BatchNormalization() (o)
     return o
 
-def ApplyResidualDilatedConvs(s, ksize = (3,3)):
-    s = ApplyDilatedConvs(outChannels, ksize, activation=None, padding='same') (s)
+def ApplySDC(s, outChannels, ksize = (3,3), padType = 'same'  ):
+    s = SeparableConv2D(outChannels, ksize, activation=NonLinearActivation, padding=padType) (s)
+    s = BatchNormalization() (s)
+    nChannels = outChannels // 2
+  
+    #divide by 4 to try to match the total number of channels of other layer types
+    tower_1 = SeparableConv2D(nChannels, ksize, dilation_rate=(1, 1), padding='same', activation=NonLinearActivation)(s)
+    tower_1 = BatchNormalization() (tower_1)
+    
+    tower_2 = SeparableConv2D(nChannels, ksize, dilation_rate=(2, 2), padding='same', activation=NonLinearActivation)(s)
+    tower_2 = BatchNormalization() (tower_2)
+
+    tower_3 = SeparableConv2D(nChannels, ksize, dilation_rate=(3, 3), padding='same', activation=NonLinearActivation)(s)
+    tower_3 = BatchNormalization() (tower_3)
+
+    o = concatenate([tower_1, tower_2, tower_3], axis=3)
+    o = Conv2D(outChannels, (1, 1), padding='same', activation=NonLinearActivation)(o)
+    o = BatchNormalization() (o)
+    return o
+
+def RDC(s, outChannels, ksize = (3,3)):
+    s = ApplyDilatedConvs(s, outChannels, ksize)
     s = BatchNormalization() (s)
     s = Activation(NonLinearActivation)(s)
     
-    c1 = ApplyDilatedConvs(outChannels, ksize, activation=None, padding='same') (s)
+    c1 = ApplyDilatedConvs(s, outChannels, ksize)
     c1 = BatchNormalization() (c1)
     c1 = Activation(NonLinearActivation)(c1)
     c1 = Add() ([s, c1])
