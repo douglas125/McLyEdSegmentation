@@ -184,6 +184,39 @@ def ApplyInception(s, outChannels, ksize = (3,3), padType = 'same'  ):
     o = BatchNormalization() (o)
     return o
 
+def ApplyDilatedConvs(s, outChannels, ksize = (3,3), padType = 'same'  ):
+    s = Conv2D(outChannels, ksize, activation=NonLinearActivation, padding=padType) (s)
+    s = BatchNormalization() (s)
+    nChannels = outChannels // 2
+  
+    #divide by 4 to try to match the total number of channels of other layer types
+    tower_1 = Conv2D(nChannels, ksize, dilation_rate=(1, 1), padding='same', activation=NonLinearActivation)(s)
+    tower_1 = Conv2D(nChannels, (1, 1), padding='same', activation=NonLinearActivation)(tower_1)
+    tower_1 = BatchNormalization() (tower_1)
+    
+    tower_2 = Conv2D(nChannels, ksize, dilation_rate=(2, 2), padding='same', activation=NonLinearActivation)(s)
+    tower_2 = Conv2D(nChannels, (1, 1), padding='same', activation=NonLinearActivation)(tower_2)
+    tower_2 = BatchNormalization() (tower_2)
+
+    tower_3 = Conv2D(nChannels, ksize, dilation_rate=(3, 3), padding='same', activation=NonLinearActivation)(s)
+    tower_3 = Conv2D(nChannels, (1, 1), padding='same', activation=NonLinearActivation)(tower_3)
+    tower_3 = BatchNormalization() (tower_3)
+
+    o = concatenate([tower_1, tower_2, tower_3], axis=3)
+    o = Conv2D(outChannels, (1, 1), padding='same', activation=NonLinearActivation)(o)
+    o = BatchNormalization() (o)
+    return o
+
+def ApplyResidualDilatedConvs(s, ksize = (3,3)):
+    s = ApplyDilatedConvs(outChannels, ksize, activation=None, padding='same') (s)
+    s = BatchNormalization() (s)
+    s = Activation(NonLinearActivation)(s)
+    
+    c1 = ApplyDilatedConvs(outChannels, ksize, activation=None, padding='same') (s)
+    c1 = BatchNormalization() (c1)
+    c1 = Activation(NonLinearActivation)(c1)
+    c1 = Add() ([s, c1])
+    return c1    
 
 # src: https://www.kaggle.com/aglotero/another-iou-metric
 def IoU(y_true_in, y_pred_in, print_table=False):
