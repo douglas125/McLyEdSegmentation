@@ -8,6 +8,7 @@ from keras.callbacks import EarlyStopping, ModelCheckpoint, LearningRateSchedule
 from keras import backend as K
 from keras import optimizers
 import numpy as np
+from tqdm import tqdm
 
 import tensorflow as tf
 
@@ -119,8 +120,9 @@ def dice_coef(y_true, y_pred, smooth=1):
     return (2. * intersection + smooth) / (K.sum(K.square(y_true),-1) + K.sum(K.square(y_pred),-1) + smooth)
 
 def dice_loss(y_true, y_pred):
-    bin_crossentropyloss = K.mean(K.binary_crossentropy(y_true, y_pred), axis=-1) * 1e-2
-    return (1-dice_coef(y_true, y_pred))+bin_crossentropyloss
+    bin_crossentropyloss = K.mean(K.binary_crossentropy(y_true, y_pred), axis=-1)
+    #bin_crossentropyloss = K.max(K.binary_crossentropy(y_true, y_pred), axis=-1)
+    return (1-dice_coef(y_true, y_pred))*0.3+bin_crossentropyloss*0.7
 
   
 def mean_iou(y_true, y_pred):
@@ -133,6 +135,20 @@ def mean_iou(y_true, y_pred):
             score = tf.identity(score)
         prec.append(score)
     return K.mean(K.stack(prec), axis=0)
+
+def mean_iouKaggle(y_true, y_pred): #closer to Kaggle version
+    scores = []
+    batchSize = 32 #y_pred.get_shape().as_list()[0]
+    #print(batchSize)
+    for k in range(batchSize):
+        y_pred_ = tf.to_int32(y_pred[k:k+1] > 0.5)
+        score, up_opt = tf.metrics.mean_iou(y_true[k:k+1], y_pred_, 2)
+        K.get_session().run(tf.local_variables_initializer())
+        with tf.control_dependencies([up_opt]):
+            score = tf.identity(score)
+        scores.append(score)
+
+    return K.mean(K.stack(scores), axis=0)
 
 
 class ReflectionPadding2D(ZeroPadding2D):
@@ -185,6 +201,25 @@ def ApplyInception(s, outChannels, ksize = (3,3), padType = 'same'  ):
 
     o = concatenate([tower_1, tower_2, tower_3], axis=3)
     o = Conv2D(outChannels, (1, 1), padding='same', activation=NonLinearActivation)(o)
+    o = BatchNormalization() (o)
+    return o
+
+def ApplyDC4(s, outChannels, ksize = (3,3), padType = 'same'  ):
+    s = Conv2D(outChannels, ksize, activation=NonLinearActivation, padding=padType) (s)
+    s = BatchNormalization() (s)
+    nChannels = outChannels // 4
+  
+    #divide by 4 to try to match the total number of channels of other layer types
+    tower_1 = Conv2D(nChannels, ksize, dilation_rate=(1, 1), padding='same', activation=NonLinearActivation)(s)
+    
+    tower_2 = Conv2D(nChannels, ksize, dilation_rate=(3, 3), padding='same', activation=NonLinearActivation)(s)
+
+    tower_3 = Conv2D(nChannels, ksize, dilation_rate=(6, 6), padding='same', activation=NonLinearActivation)(s)
+
+    tower_4 = Conv2D(nChannels, ksize, dilation_rate=(12, 12), padding='same', activation=NonLinearActivation)(s)
+
+    o = concatenate([tower_1, tower_2, tower_3, tower_4], axis=3)
+    #o = Conv2D(outChannels, (1, 1), padding='same', activation=NonLinearActivation)(o)
     o = BatchNormalization() (o)
     return o
 
@@ -256,7 +291,7 @@ class IntervalEvaluation(Callback):
 
         self.interval = interval
         self.X_val, self.y_val = validation_data
-        self.score_list=[]
+        self.score_list=[0]
 
     def on_epoch_end(self, epoch, logs={}):
         if epoch % self.interval == 0:
@@ -284,7 +319,11 @@ class IntervalEvaluation(Callback):
                 prec_list.append(Prec)
 
             prec_score=np.mean(prec_list)
-            print('Accurate validation score is {}'.format(prec_score))
+            print('Accurate validation score is {}. Best so far is {}'.format(prec_score, max(self.score_list)))
+            
+            if prec_score > max(self.score_list):
+                print('Saving model-tgs-salt-IV.h5')
+                self.model.save('model-tgs-salt-IV.h5')
             
             self.score_list.append(prec_score)
 # (snip)
@@ -355,6 +394,34 @@ def IoUOld(a,b):
     else:
         return 0
 
+    
+from skimage.morphology import watershed
+def WaterShedProc(img, lowThresh = 0.1, highThresh = 0.7):
+    """
+    Applies watershed thresholding to an img
+    
+    #receive img with shape [H,W,1]
+    #returns img with shape [H,W,1]
+    """
+    markers = np.zeros_like(img[:,:,0])
+    markers[img[:,:,0] < lowThresh] = 2
+    markers[img[:,:,0] > highThresh] = 1
+    segmentation = watershed(img[:,:,0], markers)
+    segmentation[segmentation == 2] = 0
+    segmentation = np.expand_dims(segmentation, axis=2)
+    
+    return segmentation
+
+def WaterShedChangeAll(y_vals, lowThresh = 0.1, highThresh = 0.7):
+    """
+    Returns a watershed binarization of all y_vals
+    """
+    ans = np.zeros_like(y_vals)
+    for k in tqdm(range(y_vals.shape[0])):
+        ans[k] = WaterShedProc(y_vals[k], lowThresh, highThresh)
+        
+    return ans    
+    
 def non_local_block(ip, intermediate_dim=None, compression=4,
                     mode='embedded', add_residual=False):
     """
