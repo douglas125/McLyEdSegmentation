@@ -195,19 +195,19 @@ def ApplyDC(s, outChannels, ksize = (3,3), padType = 'same'  ):
   
     #divide by 4 to try to match the total number of channels of other layer types
     tower_1 = Conv2D(nChannels, ksize, dilation_rate=(1, 1), padding='same', activation=NonLinearActivation)(s)
-    tower_1 = Conv2D(nChannels, (1, 1), padding='same', activation=NonLinearActivation)(tower_1)
-    tower_1 = BatchNormalization() (tower_1)
+    #tower_1 = Conv2D(nChannels, (1, 1), padding='same', activation=NonLinearActivation)(tower_1)
+    #tower_1 = BatchNormalization() (tower_1)
     
-    tower_2 = Conv2D(nChannels, ksize, dilation_rate=(2, 2), padding='same', activation=NonLinearActivation)(s)
-    tower_2 = Conv2D(nChannels, (1, 1), padding='same', activation=NonLinearActivation)(tower_2)
-    tower_2 = BatchNormalization() (tower_2)
+    tower_2 = Conv2D(nChannels, ksize, dilation_rate=(3, 3), padding='same', activation=NonLinearActivation)(s)
+    #tower_2 = Conv2D(nChannels, (1, 1), padding='same', activation=NonLinearActivation)(tower_2)
+    #tower_2 = BatchNormalization() (tower_2)
 
-    tower_3 = Conv2D(nChannels, ksize, dilation_rate=(3, 3), padding='same', activation=NonLinearActivation)(s)
-    tower_3 = Conv2D(nChannels, (1, 1), padding='same', activation=NonLinearActivation)(tower_3)
-    tower_3 = BatchNormalization() (tower_3)
+    tower_3 = Conv2D(nChannels, ksize, dilation_rate=(5, 5), padding='same', activation=NonLinearActivation)(s)
+    #tower_3 = Conv2D(nChannels, (1, 1), padding='same', activation=NonLinearActivation)(tower_3)
+    #tower_3 = BatchNormalization() (tower_3)
 
     o = concatenate([tower_1, tower_2, tower_3], axis=3)
-    o = Conv2D(outChannels, (1, 1), padding='same', activation=NonLinearActivation)(o)
+    #o = Conv2D(outChannels, (1, 1), padding='same', activation=NonLinearActivation)(o)
     o = BatchNormalization() (o)
     return o
 
@@ -267,9 +267,9 @@ class IntervalEvaluation(Callback):
             for j in range(y_pred.shape[0]):
                 y_pred_ = np.array(y_pred[j,:,:] > t, dtype=bool)
                 y_val_=np.array(self.y_val[j,:,:], dtype=bool)
-                overlap = y_pred_*y_val_ # Logical AND
-                union = y_pred_ + y_val_ # Logical OR
-                IOU = overlap.sum()/float(union.sum())
+                
+                IOU = IoUOld(y_pred_, y_val_) 
+                
                 IOU_list.append(IOU)
             #now we take different threshholds, these threshholds 
             #basically determine if our IOU consitutes as a "true positiv"
