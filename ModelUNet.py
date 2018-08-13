@@ -578,3 +578,63 @@ def _convND(ip, rank, channels):
     else:
         x = Conv3D(channels, (1, 1, 1), padding='same', use_bias=False, kernel_initializer='he_normal')(ip)
     return x
+
+
+############
+# Fully Atrous
+###########
+def GetFullyAtrous():
+    #try to do stuff without reducing the scale
+    im_height = 101
+    im_width = 101
+    im_chan = 1
+
+
+    inputImg = Input((im_height, im_width, im_chan))
+    inputDepth = Input( (1,1,1) )
+
+    #s = Lambda(lambda x: x / 255) (inputImg)
+    s = inputImg
+
+    dd = Lambda(lambda x: x * 0.001) (inputDepth)
+
+    #s = ReflectionPadding2D( padding = ((13, 14), (13, 14)) ) (s)
+    s = ZeroPadding2D( padding = ((13, 14), (13, 14)) ) (s)
+
+    numFilters = 8
+    s = ModelUNet.ApplyDC4(s, numFilters)
+    s = ModelUNet.ApplyDC4(s, 2*numFilters)
+    sc1 = s
+
+    s = ModelUNet.ApplyDC4(s, 4*numFilters)
+    sc2 = s
+
+    s = ModelUNet.ApplyDC4(s, 8*numFilters)
+    sc3 = s
+
+    s = ModelUNet.ApplyDC4(s, 8*numFilters)
+
+    s = ModelUNet.ApplyDC4(s, 8*numFilters)
+    s = Add() ([s, sc3])
+
+    s = ModelUNet.ApplyConv(s, 4*numFilters)
+    s = Add() ([s, sc2])
+
+    s = ModelUNet.ApplyConv(s, 2*numFilters)
+    s = Add() ([s, sc1])
+
+    s = ModelUNet.ApplyConv(s, 2*numFilters)
+    s = ModelUNet.ApplyConv(s, 2*numFilters)
+
+    outputs = Conv2D(1, (1, 1), activation='sigmoid') (s)
+
+
+    outputs = Cropping2D(cropping=((13, 14), (13, 14)) ) (outputs)
+
+    model = Model(inputs=[inputImg, inputDepth], outputs=[outputs])
+
+    model.compile(optimizer='adam', loss=ModelUNet.dice_loss, metrics=[ModelUNet.mean_iou])
+
+    model.summary()
+    
+    return model
