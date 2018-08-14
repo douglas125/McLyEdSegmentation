@@ -22,6 +22,74 @@ def _expand(tensor111, dim1, dim2):
     ans = K.repeat_elements(ans, dim2, 2)
     return ans
 
+def BuildSUNet(convFunction, nFilter = 16, net_depth = 4, input_img_shape = (128,128,1), encoderSquash = 8, nBorderRefinementConvs = 3 ):
+    """
+    Builds shortcut U-Net model
+    
+    Assumes image and depth information already come in normalized
+    
+    nBorderRefinementConvs - number of convolutions after output has been computed (after last upsample)
+    encoderSquash - Squash encoder outputs at each level to have this number of channels. Set to zero to skip squashing.
+    """
+    
+    inputImg = Input(input_img_shape)
+    inputDepth = Input( (1,1,1) )
+    
+    #s = Lambda(lambda x: x / 255) (inputs)
+
+    #s = ReflectionPadding2D( padding = ((13, 14), (13, 14)) ) (s)
+    #s = ZeroPadding2D( padding = ((13, 14), (13, 14)) ) (s)
+
+
+    uLayers = []
+
+    curLayer = inputImg
+    curLayer = convFunction(curLayer, nFilter)
+    for k in range(net_depth):
+        curLayer = convFunction(curLayer, (2**(1+k))*nFilter)
+        if encoderSquash > 0:
+            squashedLayer = Conv2D(encoderSquash, (1,1), activation=None, padding='same') (curLayer)
+            uLayers.append(squashedLayer)
+        else:
+            uLayers.append(curLayer)
+            
+        curLayer = MaxPooling2D((2, 2)) (curLayer)
+
+    #take depth into account in the deepest layer
+    dim1 = input_img_shape[0] // (2**(net_depth))
+    dim2 = input_img_shape[1] // (2**(net_depth))
+
+    depthIn = Lambda(lambda x: _expand(x, dim1, dim2) )(inputDepth)
+    curLayer = concatenate([curLayer, depthIn])
+    
+    curLayer = convFunction(curLayer, (2**net_depth)*nFilter)
+    if encoderSquash > 0:
+        curLayer = Conv2D(encoderSquash, (1,1), activation=None, padding='same') (curLayer)
+
+    upsize = 2**net_depth
+    curLayer = Conv2DTranspose(nFilter, (2, 2), strides=(upsize, upsize), padding='same') (curLayer)
+    
+    for k in range(net_depth):
+        curULayer = uLayers[net_depth-k-1]
+        upsize = 2**(net_depth-k-1)
+        curULayer = Conv2DTranspose(nFilter, (2, 2), strides=(upsize, upsize), padding='same') (curULayer)
+        curLayer = concatenate([curLayer, curULayer])
+
+    curLayer = ApplyDC4(curLayer, nFilter*net_depth, ksize = (5,5))    
+    for k in range(nBorderRefinementConvs):
+        curLayer = ApplyConv(curLayer, nFilter)
+    
+
+    outputs = Conv2D(1, (1, 1), activation='sigmoid') (curLayer)
+    
+    #outputs = Cropping2D(cropping=((13, 14), (13, 14)) ) (outputs)
+
+    model = Model(inputs=[inputImg, inputDepth], outputs=[outputs], name='SUNet_d{}'.format(net_depth) )
+    
+    #model.compile(optimizer='adam', loss=dice_loss, metrics=[mean_iou])
+    
+    return model
+
 def BuildUNet(convFunction, nFilter = 8, net_depth = 4, input_img_shape = (128,128,1), encoderSquash = 0, nBorderRefinementConvs = 2 ):
     """
     Builds U-Net model
