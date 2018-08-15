@@ -3,9 +3,11 @@
 import keras
 import tensorflow as tf
 from keras.models import Model
-from keras.layers import Input, Conv2D, MaxPooling2D, UpSampling2D,Conv1D,SeparableConv2D,Lambda,ZeroPadding2D,Cropping2D
+from keras.layers import Input, Conv2D, MaxPooling2D, UpSampling2D,Conv1D,SeparableConv2D,Lambda,ZeroPadding2D,Cropping2D,Concatenate,Bidirectional
+from keras.layers import  CuDNNLSTM,Permute,Reshape,Flatten,Dense,Lambda,Multiply
+
 from keras.layers.normalization import BatchNormalization
-from keras.layers.core import SpatialDropout2D, Activation
+from keras.layers.core import SpatialDropout2D, Activation,Dropout
 from keras import backend as K
 from keras.layers.merge import concatenate
 from keras.utils.data_utils import get_file
@@ -15,80 +17,57 @@ from skimage.morphology import label
 import numpy as np
 
 def UpSampling2DBilinear(size):
-    return Lambda(lambda x: tf.image.resize_bilinear(x, size, align_corners=True))
+    return Lambda(lambda x: tf.image.resize_bilinear(x, size, align_corners=False))
 # Attention UNET First the unet custom layer: It will take two inputs: The low level feature and the high level feature and it will returned a concatenation of the 
 #an attention weightedhigh level and a low level 
 #The Loop Projection Layer Transforms each Aggregation seperately
-class Attention_Concat(keras.layers.Layer):
 
-    def __init__(self, feature_dim=None,feature_dim_2=None, **kwargs):
-        
-        
-        self.feature_dim=feature_dim
-        self.feature_dim_2=feature_dim_2
-        super(Attention_Concat, self).__init__(**kwargs)
+#we should write the attention layer as a function and only the parts where I need tf in lambda layers. toherwise we might have a problem with trainable layers
 
-        
-    def build(self, input_shape):
-        
-        self.cnn_1=Conv2D(self.feature_dim, (1, 1), padding='same')
-        self.cnn_2=Conv2D(self.feature_dim, (1, 1), padding='same')
-        self.cnn_3=Conv1D(self.feature_dim_2,  1,activation="relu", padding='same')
-        self.cnn_4=Conv1D(1, 1,activation="sigmoid", padding='same')
-        #this should be the common dimension ( of the low leve)
-        self.res=keras.layers.Reshape((input_shape[1][1]*input_shape[1][1],self.feature_dim))
-        self.con=keras.layers.Concatenate(axis=2)
-        
-        self.res_2=keras.layers.Reshape((input_shape[1][1],input_shape[1][1],1))
-        
-        self.up=UpSampling2DBilinear( (input_shape[0][1],input_shape[0][1]))
-        #self.res_3=keras.layers.Reshape((input_shape[0][1],input_shape[0][1],1))
-        super(Attention_Concat, self).build(input_shape)  # Be sure to call this somewhere!
 
-        
-    def call(self, x):
-        #for all references we act like hl is 14 x 14 and low level is 7 x 7
-        
-        #having two inputs, lets see if this works :D 
-        #means higher resulution and more up in the unet
-        high_level=x[0]
-        #means lower resolution and down in the unet. 
-        low_level=x[1]
-        
-        #reduce it to same size as low level will be 7x7
-        reduced_high_level=MaxPooling2D(pool_size=(2, 2))(high_level)
-        
-        
-        #extract features and bring them to same z dimension aka 7x7x32 if feature dim is 32
-        hl_feat=self.cnn_1(reduced_high_level)
-        ll_feat=self.cnn_2(low_level)
-        
-        #we reshape them and concat them next, target shape will be 49x32 for each 
-        hl_feat=self.res(hl_feat)
-        ll_feat=self.res(ll_feat)
-        
-        #concat them to apply 1d convolution
-        con_feat=self.con([hl_feat,ll_feat]) # will be 49x64
-        #next we apply 1d conv 
-        extra=self.cnn_3(con_feat)
-        sigmoids=self.cnn_4(con_feat)
-        #bring it back to 7x7x1
-        sigmoids=self.res_2(sigmoids)
-        
-        #then we use upsampling to bring it back ot original dim would be 14x14x1 
-        sigmoids=self.up(sigmoids)
 
-        #then we broadcast multiply
-        weighted_hl=tf.multiply(high_level,sigmoids)
-        
-        final=keras.layers.Concatenate( axis=3)([UpSampling2D(size=(2, 2))(low_level), weighted_hl])
-        
-        return final
+#basically we should define attention concat as a function and use custom Lmabda
+#layer when needed
+#Input: List High Level, high resoltion frst then low level low resolution
+def Attention_Concat(inpu, feature_dim=None,feature_dim_2=None):
+    cnn_1=Conv2D(feature_dim, (1, 1), padding='same')
+    cnn_2=Conv2D(feature_dim, (1, 1), padding='same')
 
-    def compute_output_shape(self, input_shape):
-        return (input_shape[0][0],input_shape[0][1],input_shape[0][1],input_shape[0][3]+input_shape[1][3])
+    cnn_3=Conv1D(feature_dim_2,  1,activation="relu", padding='same')
+    cnn_4=Conv1D(1, 1,activation="sigmoid", padding='same')
     
+    high_level=inpu[0]
+    #means lower resolution and down in the unet. 
+    low_level=inpu[1]
+    size_big=int(high_level.shape[1])
+    size_small=int(low_level.shape[1])
+
+    #this should be the common dimension ( of the low leve)
+    res=keras.layers.Reshape((size_small*size_small,feature_dim))
+    con=keras.layers.Concatenate(axis=2)
+
+    res_2=keras.layers.Reshape((size_small,size_small,1))
+    up=UpSampling2DBilinear( (size_big,size_big))
     
+    reduced_high_level=MaxPooling2D(pool_size=(2, 2))(high_level)
+
+    hl_feat=cnn_1(reduced_high_level)
+    ll_feat=cnn_2(low_level)
+    
+    #reshape them 
+    hl_feat=res(hl_feat)
+    ll_feat=res(ll_feat)
+
+    con_feat=keras.layers.Concatenate(axis=2)([hl_feat,ll_feat])
+    extra=cnn_3(con_feat)
+    sigmoids=cnn_4(extra)
+    #bring it back to 7x7x1
+    sigmoids=res_2(sigmoids)
+    sigmoids=up(sigmoids)
+    
+    weighted_hl=keras.layers.multiply([high_level,sigmoids])
+    final=keras.layers.Concatenate( axis=3)([UpSampling2D(size=(2, 2))(low_level), weighted_hl])
+    return final 
     
 
 # Number of image channels (for example 3 in case of RGB, or 1 for grayscale images)
@@ -134,16 +113,16 @@ def dice_loss(y_true, y_pred):
     return (1-dice_coef(y_true, y_pred))*0.3+bin_crossentropyloss*0.7
 
 
-def double_conv_layer(x, size, dropout=0.0, batch_norm=True,kernel=3,dia=1):
+def double_conv_layer(x, size, dropout=0.1, batch_norm=True,kernel=3,dia=1):
     if K.image_dim_ordering() == 'th':
         axis = 1
     else:
         axis = 3
-    conv = SeparableConv2D(size, (kernel, kernel),dilation_rate=dia, padding='same')(x)
+    conv = Conv2D(size, (kernel, kernel),dilation_rate=dia, padding='same')(x)
     if batch_norm is True:
         conv = BatchNormalization(axis=axis)(conv)
     conv = Activation('relu')(conv)
-    conv = SeparableConv2D(size, (kernel, kernel),dilation_rate=dia, padding='same')(conv)
+    conv = Conv2D(size, (kernel, kernel),dilation_rate=dia, padding='same')(conv)
     if batch_norm is True:
         conv = BatchNormalization(axis=axis)(conv)
     conv = Activation('relu')(conv)
@@ -166,7 +145,155 @@ def step_decay(epoch):
 lrate = LearningRateScheduler(step_decay)
 
 
-def attention_unet(filters,k=3,d=1):
+
+def attention_unet_2(filters,k=3,d=1,fd=64):
+    axis = 3
+    dropout_val=0.1
+    inputs = Input((128, 128, 1))
+    #norm
+    #s = Lambda(lambda x: x / 255) (inputs)
+    #pad
+    #s = ZeroPadding2D( padding = ((13, 14), (13, 14)) ) (s)
+    
+    
+    #downsample path
+    conv_224 = double_conv_layer(inputs, filters,kernel=5,dia=d)
+    pool_112 = MaxPooling2D(pool_size=(2, 2))(conv_224)
+
+    conv_112 = double_conv_layer(pool_112, 2*filters,kernel=5,dia=d)
+    pool_56 = MaxPooling2D(pool_size=(2, 2))(conv_112)
+
+    conv_56 = double_conv_layer(pool_56, 4*filters,kernel=5,dia=d)
+    pool_28 = MaxPooling2D(pool_size=(2, 2))(conv_56)
+
+    conv_28 = double_conv_layer(pool_28, 8*filters,kernel=3,dia=d)
+    pool_14 = MaxPooling2D(pool_size=(2, 2))(conv_28)
+
+    conv_14 = double_conv_layer(pool_14, 16*filters,kernel=3,dia=d)
+    
+    up_28 = Attention_Concat([conv_28,conv_14],feature_dim=fd*4,feature_dim_2=fd*2)
+    up_conv_28 = double_conv_layer(up_28, 8*filters,kernel=3,dia=d)
+
+    up_56 = Attention_Concat([conv_56,up_conv_28 ],feature_dim=fd*4,feature_dim_2=fd*2)
+    up_conv_56 = double_conv_layer(up_56, 4*filters,kernel=3,dia=d)
+
+    up_112 = Attention_Concat([conv_112,up_conv_56],feature_dim=fd*2,feature_dim_2=fd*2)
+    up_conv_112 = double_conv_layer(up_112, 2*filters,kernel=5,dia=d)
+
+    up_224 = Attention_Concat([conv_224,up_conv_112],feature_dim=fd,feature_dim_2=fd*2)
+    up_conv_224 = double_conv_layer(up_224, filters, dropout_val,kernel=7,dia=d)
+
+    conv_final = Conv2D(OUTPUT_MASK_CHANNELS, (1, 1))(up_conv_224)
+
+    conv_final = Activation('sigmoid')(conv_final)
+    #conv_final = Cropping2D(cropping=((13, 14), (13, 14)) ) (conv_final)
+    
+    
+    #create the model
+    model = Model(inputs, conv_final, name="LL_UNET_ATN")
+    
+    model.compile(optimizer="adam", loss=dice_loss)
+
+    return model 
+
+def attention_unet_lstm(filters,k=3,d=1,fd=64):
+    axis = 3
+    dropout_val=0.1
+    inputs = Input((128, 128, 1))
+    inputs_lstm=Reshape((128,128))(inputs)
+    
+    #We aslo include a "high resolution" LSTM Path wiht attentionon which orientation 
+    lstm_1=Bidirectional(CuDNNLSTM(units=128,return_sequences=True),merge_mode='sum')(inputs_lstm)
+    lstm_2=Bidirectional(CuDNNLSTM(units=128,return_sequences=True)(Permute((2,1)),merge_mode='sum')(inputs_lstm))
+
+    #downsample path
+    conv_224 = double_conv_layer(inputs, filters,kernel=5,dia=d)
+    pool_112 = MaxPooling2D(pool_size=(2, 2))(conv_224)
+
+    conv_112 = double_conv_layer(pool_112, 2*filters,kernel=5,dia=d)
+    pool_56 = MaxPooling2D(pool_size=(2, 2))(conv_112)
+
+    conv_56 = double_conv_layer(pool_56, 4*filters,kernel=5,dia=d)
+    pool_28 = MaxPooling2D(pool_size=(2, 2))(conv_56)
+
+    conv_28 = double_conv_layer(pool_28, 8*filters,kernel=3,dia=d)
+    pool_14 = MaxPooling2D(pool_size=(2, 2))(conv_28)
+
+    conv_14 = double_conv_layer(pool_14, 16*filters,kernel=3,dia=d)
+    
+    #scaling the LSTM with Low level info
+    for_softmax=Flatten()(conv_14)
+    softmax=Dense(2,activation="softmax")(for_softmax)
+    scales_lstm_1=Multiply()([Lambda(lambda x: x[:,0])(softmax),lstm_1])
+    scales_lstm_2=Multiply()([Lambda(lambda x: x[:,1])(softmax),lstm_2])
+    
+    scales_lstm_1=Reshape((128,128,1))(scales_lstm_1)
+    scales_lstm_2=Reshape((128,128,1))(scales_lstm_2)
+    
+    up_28 = Attention_Concat([conv_28,conv_14],feature_dim=fd*4,feature_dim_2=fd*2)
+    up_conv_28 = double_conv_layer(up_28, 8*filters,kernel=3,dia=d)
+
+    up_56 = Attention_Concat([conv_56,up_conv_28 ],feature_dim=fd*4,feature_dim_2=fd*2)
+    up_conv_56 = double_conv_layer(up_56, 4*filters,kernel=3,dia=d)
+
+    up_112 = Attention_Concat([conv_112,up_conv_56],feature_dim=fd*2,feature_dim_2=fd*2)
+    up_conv_112 = double_conv_layer(up_112, 2*filters,kernel=5,dia=d)
+
+    up_224 = Attention_Concat([conv_224,up_conv_112],feature_dim=fd,feature_dim_2=fd*2)
+    up_conv_224 = double_conv_layer(up_224, filters, dropout_val,kernel=7,dia=d)
+
+    final=Concatenate(axis=3)([scales_lstm_1,scales_lstm_2,up_conv_224])
+    conv_final = Conv2D(OUTPUT_MASK_CHANNELS, (1, 1))(final)
+
+    conv_final = Activation('sigmoid')(conv_final)
+    #conv_final = Cropping2D(cropping=((13, 14), (13, 14)) ) (conv_final)
+    
+    
+    #create the model
+    model = Model(inputs, conv_final, name="LL_UNET_ATN")
+    
+    model.compile(optimizer="adam", loss=dice_loss)
+
+    return model 
+
+
+def conv_block(m, dim, acti, bn, res, do=0):
+	n = Conv2D(dim, 3, activation=acti, padding='same')(m)
+	n = BatchNormalization()(n) if bn else n
+	n = Dropout(do)(n) if do else n
+	n = Conv2D(dim, 3, activation=acti, padding='same')(n)
+	n = BatchNormalization()(n) if bn else n
+	return Concatenate()([m, n]) if res else n
+
+def level_block(m, dim, depth, inc, acti, do, bn, mp, up, res):
+	if depth > 0:
+		n = conv_block(m, dim, acti, bn, res)
+		m = MaxPooling2D()(n) if mp else Conv2D(dim, 3, strides=2, padding='same')(n)
+		m = level_block(m, int(inc*dim), depth-1, inc, acti, do, bn, mp, up, res)
+		if up:
+			m = UpSampling2D()(m)
+			m = Conv2D(dim, 2, activation=acti, padding='same')(m)
+		else:
+			m = Conv2DTranspose(dim, 3, strides=2, activation=acti, padding='same')(m)
+		n = Concatenate()([n, m])
+		m = conv_block(n, dim, acti, bn, res)
+	else:
+		m = conv_block(m, dim, acti, bn, res, do)
+	return m
+
+def UNet(img_shape, out_ch=1, start_ch=64, depth=4, inc_rate=2., activation='relu', 
+    dropout=0.5, batchnorm=False, maxpool=True, upconv=True, residual=False):
+    i = Input(shape=img_shape)
+    o = level_block(i, start_ch, depth, inc_rate, activation, dropout, batchnorm, maxpool, upconv, residual)
+    o = Conv2D(out_ch, 1, activation='sigmoid')(o)
+    
+    model=Model(inputs=i, outputs=o)
+    model.compile(optimizer="adam", loss=dice_loss)
+
+    return model 
+
+
+def attention_unet(filters,k=3,d=1,fd=32):
     axis = 3
     dropout_val=0.1
     inputs = Input((101, 101, 2))
@@ -195,19 +322,19 @@ def attention_unet(filters,k=3,d=1):
     conv_7 = double_conv_layer(pool_7, 32*filters)
     
     #upsample path
-    up_14 = Attention_Concat(feature_dim=128,feature_dim_2=128)([conv_14,conv_7])
+    up_14 = Attention_Concat(feature_dim=fd*16,feature_dim_2=fd*16)([conv_14,conv_7])
     up_conv_14 = double_conv_layer(up_14, 16*filters,kernel=k,dia=d)
 
-    up_28 = Attention_Concat(feature_dim=128,feature_dim_2=128)([conv_28,up_conv_14])
+    up_28 = Attention_Concat(feature_dim=fd*8,feature_dim_2=fd*8)([conv_28,up_conv_14])
     up_conv_28 = double_conv_layer(up_28, 8*filters,kernel=k,dia=d)
 
-    up_56 = Attention_Concat(feature_dim=128,feature_dim_2=128)([conv_56,up_conv_28 ])
+    up_56 = Attention_Concat(feature_dim=fd*4,feature_dim_2=fd*4)([conv_56,up_conv_28 ])
     up_conv_56 = double_conv_layer(up_56, 4*filters,kernel=k,dia=d)
 
-    up_112 = Attention_Concat(feature_dim=128,feature_dim_2=128)([conv_112,up_conv_56])
+    up_112 = Attention_Concat(feature_dim=fd*2,feature_dim_2=fd*2)([conv_112,up_conv_56])
     up_conv_112 = double_conv_layer(up_112, 2*filters,kernel=k,dia=d)
 
-    up_224 = Attention_Concat(feature_dim=128,feature_dim_2=128)([conv_224,up_conv_112])
+    up_224 = Attention_Concat(feature_dim=fd,feature_dim_2=fd)([conv_224,up_conv_112])
     up_conv_224 = double_conv_layer(up_224, filters, dropout_val,kernel=k,dia=d)
 
     conv_final = Conv2D(OUTPUT_MASK_CHANNELS, (1, 1))(up_conv_224)
@@ -222,6 +349,7 @@ def attention_unet(filters,k=3,d=1):
     model.compile(optimizer="adam", loss=dice_loss)
 
     return model 
+
 
 
 import tensorflow as tf
