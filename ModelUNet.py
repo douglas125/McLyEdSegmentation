@@ -22,7 +22,8 @@ def _expand(tensor111, dim1, dim2):
     ans = K.repeat_elements(ans, dim2, 2)
     return ans
 
-def BuildSUNet(convFunction, nFilter = 16, net_depth = 4, input_img_shape = (128,128,1), encoderSquash = 8, nBorderRefinementConvs = 3 ):
+def BuildSUNet(convFunction, nFilter = 16, net_depth = 4, input_img_shape = (128,128,1), encoderSquash = 8, 
+               innerConvs = 16, nBorderRefinementConvs = 3 ):
     """
     Builds shortcut U-Net model
     
@@ -53,7 +54,9 @@ def BuildSUNet(convFunction, nFilter = 16, net_depth = 4, input_img_shape = (128
         else:
             uLayers.append(curLayer)
             
-        curLayer = MaxPooling2D((2, 2)) (curLayer)
+        #curLayer = MaxPooling2D((2, 2)) (curLayer)
+        curLayer = SeparableConv2D(nFilter, (3,3), strides=(2, 2), padding='same', activation=NonLinearActivation)(curLayer)
+        
 
     #take depth into account in the deepest layer
     dim1 = input_img_shape[0] // (2**(net_depth))
@@ -62,7 +65,14 @@ def BuildSUNet(convFunction, nFilter = 16, net_depth = 4, input_img_shape = (128
     depthIn = Lambda(lambda x: _expand(x, dim1, dim2) )(inputDepth)
     curLayer = concatenate([curLayer, depthIn])
     
+    
     curLayer = convFunction(curLayer, (2**net_depth)*nFilter)
+    for k in range(innerConvs):
+        ic = convFunction(curLayer, (2**net_depth)*nFilter)
+        ic = convFunction(ic, (2**net_depth)*nFilter)
+        curLayer = Add()([curLayer, ic])
+    curLayer = ApplyDC4(curLayer, nFilter*net_depth, ksize = (3,3))    
+    
     if encoderSquash > 0:
         curLayer = Conv2D(encoderSquash, (1,1), activation=None, padding='same') (curLayer)
 
@@ -75,7 +85,7 @@ def BuildSUNet(convFunction, nFilter = 16, net_depth = 4, input_img_shape = (128
         curULayer = Conv2DTranspose(nFilter, (2, 2), strides=(upsize, upsize), padding='same') (curULayer)
         curLayer = concatenate([curLayer, curULayer])
 
-    curLayer = ApplyDC4(curLayer, nFilter*net_depth, ksize = (5,5))    
+    #curLayer = ApplyDC4(curLayer, nFilter*net_depth, ksize = (3,3))    
     for k in range(nBorderRefinementConvs):
         curLayer = ApplyConv(curLayer, nFilter)
     
@@ -190,7 +200,7 @@ def dice_coef(y_true, y_pred, smooth=1):
 def dice_loss(y_true, y_pred):
     bin_crossentropyloss = K.mean(K.binary_crossentropy(y_true, y_pred), axis=-1)
     #bin_crossentropyloss = K.max(K.binary_crossentropy(y_true, y_pred), axis=-1)
-    return (1-dice_coef(y_true, y_pred))*0.3+bin_crossentropyloss*0.7
+    return (1-dice_coef(y_true, y_pred))*0.99+bin_crossentropyloss*0.01
 
   
 def mean_iou(y_true, y_pred):
@@ -229,6 +239,13 @@ class ReflectionPadding2D(ZeroPadding2D):
 
 def ApplyConv(s, outChannels, ksize = (3,3), padType = 'same' ):
     c1 = Conv2D(outChannels, ksize, activation=None, padding=padType) (s)
+    c1 = BatchNormalization() (c1)
+    c1 = Activation(NonLinearActivation)(c1)
+    
+    return c1
+
+def ApplySepConv(s, outChannels, ksize = (3,3), padType = 'same' ):
+    c1 = SeparableConv2D(outChannels, ksize, activation=None, padding=padType) (s)
     c1 = BatchNormalization() (c1)
     c1 = Activation(NonLinearActivation)(c1)
     
@@ -278,15 +295,17 @@ def ApplyDC4(s, outChannels, ksize = (3,3), padType = 'same'  ):
     nChannels = outChannels // 4
   
     #divide by 4 to try to match the total number of channels of other layer types
-    tower_1 = Conv2D(nChannels, ksize, dilation_rate=(1, 1), padding='same', activation=NonLinearActivation)(s)
+    tower_1 = SeparableConv2D(nChannels, ksize, dilation_rate=(1, 1), padding='same', activation=NonLinearActivation)(s)
     
-    tower_2 = Conv2D(nChannels, ksize, dilation_rate=(3, 3), padding='same', activation=NonLinearActivation)(s)
+    tower_2 = SeparableConv2D(nChannels, ksize, dilation_rate=(2, 2), padding='same', activation=NonLinearActivation)(s)
 
-    tower_3 = Conv2D(nChannels, ksize, dilation_rate=(6, 6), padding='same', activation=NonLinearActivation)(s)
+    tower_3 = SeparableConv2D(nChannels, ksize, dilation_rate=(3, 3), padding='same', activation=NonLinearActivation)(s)
 
-    tower_4 = Conv2D(nChannels, ksize, dilation_rate=(12, 12), padding='same', activation=NonLinearActivation)(s)
+    tower_4 = SeparableConv2D(nChannels, ksize, dilation_rate=(4, 4), padding='same', activation=NonLinearActivation)(s)
 
-    o = concatenate([tower_1, tower_2, tower_3, tower_4], axis=3)
+    tower_5 = MaxPooling2D((2, 2), strides=(1, 1), padding='same')(s)
+
+    o = concatenate([tower_1, tower_2, tower_3, tower_4, tower_5], axis=3)
     #o = Conv2D(outChannels, (1, 1), padding='same', activation=NonLinearActivation)(o)
     o = BatchNormalization() (o)
     return o
