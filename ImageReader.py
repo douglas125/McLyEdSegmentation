@@ -29,48 +29,43 @@ def ReadSegmentationImages(folder, depthPd = None, readMasks = True, applyMedian
     maskFolder = os.path.join(folder, 'masks')
     imgIds = next(os.walk(imgFolder))[2]
     
-    src_images = np.zeros((len(imgIds), im_height, im_width, 1), dtype=np.uint8)
+    src_images = np.zeros((len(imgIds) - len(ignoreList), im_height, im_width, 1), dtype=np.uint8)
     
     if readMasks:
-        src_masks = np.zeros((len(imgIds), im_height, im_width, 1), dtype=np.bool)
+        src_masks = np.zeros((len(imgIds) - len(ignoreList), im_height, im_width, 1), dtype=np.bool)
     
     if depthPd is not None:
-        depths = np.zeros( (len(imgIds), 1,1,1) , dtype=np.float32)
+        depths = np.zeros( (len(imgIds) - len(ignoreList), 1,1,1) , dtype=np.float32)
         
     print('Getting images and masks ... ')
-    ignoredFiles = 0
-    for n, id_ in tqdm(enumerate(imgIds), total=len(imgIds)):
-        if not id_ in ignoreList:
-            img = load_img(  os.path.join(imgFolder, id_) )
-            x = img_to_array(img)
+    for n, id_ in tqdm(enumerate([imId for imId in imgIds if imId not in ignoreList]), total=len(imgIds) - len(ignoreList)):
+        img = load_img(  os.path.join(imgFolder, id_) )
+        x = img_to_array(img)
 
-            if depthPd is not None:
-                depthVal = depthPd[depthPd['id'] == id_.split('.')[0]].z.tolist()
-                if len(depthVal) == 1:
-                    depths[n,0,0,0] = depthVal[0]
-                else:
-                    depths[n,0,0,0] = 0
-                    print('Depth not found for {}'.format(id_))
+        if depthPd is not None:
+            depthVal = depthPd[depthPd['id'] == id_.split('.')[0]].z.tolist()
+            if len(depthVal) == 1:
+                depths[n,0,0,0] = depthVal[0]
+            else:
+                depths[n,0,0,0] = 0
+                print('Depth not found for {}'.format(id_))
 
 
-            x = x[:,:,0]
+        x = x[:,:,0]
 
-            #try median filtering
-            if applyMedianFilter:
-                x = medfilt2d(x)
+        #try median filtering
+        if applyMedianFilter:
+            x = medfilt2d(x)
 
 
-            x = x.reshape( (im_height,im_width,1) )
+        x = x.reshape( (im_height,im_width,1) )
 
-            src_images[n] = x[:,:,0:1]
-            if readMasks:
-                mask = img_to_array(load_img( os.path.join(maskFolder, id_) ))
-                src_masks[n] = mask[:,:,0:1]
-        else:
-            #print('Ignoring {}'.format(id_))
-            ignoredFiles += 1
+        src_images[n] = x[:,:,0:1]
+        if readMasks:
+            mask = img_to_array(load_img( os.path.join(maskFolder, id_) ))
+            src_masks[n] = mask[:,:,0:1]
 
-    print('Ignored {} files'.format(ignoredFiles))             
+    print('Ignored {} files'.format(len(ignoreList)))
     if depthPd is not None:
         if readMasks:
             return src_images, src_masks, depths
