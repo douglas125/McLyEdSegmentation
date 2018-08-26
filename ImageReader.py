@@ -29,16 +29,19 @@ def ReadSegmentationImages(folder, depthPd = None, readMasks = True, applyMedian
     maskFolder = os.path.join(folder, 'masks')
     imgIds = next(os.walk(imgFolder))[2]
     
-    src_images = np.zeros((len(imgIds) - len(ignoreList), im_height, im_width, 1), dtype=np.uint8)
+    list_length = len([img for img in imgIds if img not in ignoreList])
+    ignored_length = len([img for img in ignoreList if img in imgIds])
+
+    src_images = np.zeros((list_length, im_height, im_width, 1), dtype=np.uint8)
     
     if readMasks:
-        src_masks = np.zeros((len(imgIds) - len(ignoreList), im_height, im_width, 1), dtype=np.bool)
+        src_masks = np.zeros((list_length, im_height, im_width, 1), dtype=np.bool)
     
     if depthPd is not None:
-        depths = np.zeros( (len(imgIds) - len(ignoreList), 1,1,1) , dtype=np.float32)
+        depths = np.zeros( (list_length, 1,1,1) , dtype=np.float32)
         
     print('Getting images and masks ... ')
-    for n, id_ in tqdm(enumerate([imId for imId in imgIds if imId not in ignoreList]), total=len(imgIds) - len(ignoreList)):
+    for n, id_ in tqdm(enumerate([imId for imId in imgIds if imId not in ignoreList]), total=list_length):
         img = load_img(  os.path.join(imgFolder, id_) )
         x = img_to_array(img)
 
