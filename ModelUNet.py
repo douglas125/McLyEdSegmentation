@@ -1,5 +1,5 @@
 from keras.models import Model, load_model
-from keras.layers import Input, BatchNormalization, ZeroPadding2D, Add, Activation
+from keras.layers import Input, BatchNormalization, ZeroPadding2D, Add, Activation, Concatenate
 from keras.layers.core import Lambda
 from keras.layers.convolutional import Conv2D, Conv2DTranspose, SeparableConv2D
 from keras.layers.pooling import MaxPooling2D
