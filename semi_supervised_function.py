@@ -175,19 +175,7 @@ def IoUOld(a,b):
     else:
         return 0
     
-import math
-def step_decay(epoch):
-    initial_lrate = 0.001 
-    drop = 0.96
-    epochs_drop = 50.0
-    lrate = initial_lrate * math.pow(drop,  
-            math.floor((1+epoch)/epochs_drop))
-    
-    if (lrate < 5e-7):
-        lrate = 5e-7
-      
-    print('Changing learning rate to {}'.format(lrate))
-    return lrate
+
 
 
 
