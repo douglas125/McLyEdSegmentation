@@ -1,3 +1,6 @@
+
+from __future__ import print_function, division
+
 from keras.models import Model, load_model
 from keras.layers import Input, BatchNormalization, ZeroPadding2D, Add, Activation, Concatenate
 from keras.layers.core import Lambda
@@ -720,7 +723,7 @@ def GetFullyAtrous():
 
     model = Model(inputs=[inputImg, inputDepth], outputs=[outputs])
 
-    model.compile(optimizer='adam', loss=ModelUNet.dice_loss, metrics=[ModelUNet.mean_iou])
+    model.compile(optimizer='adam', loss=dice_loss, metrics=[mean_iou])
 
     model.summary()
     
@@ -729,18 +732,23 @@ def GetFullyAtrous():
 
 ##Lovasz Loss
 def lovasz_loss(y_true, y_pred):
-    y_true, y_pred = K.cast(K.squeeze(y_true, -1), 'int32'), K.cast(K.squeeze(y_pred, -1), 'float32')
-    logits = K.log(y_pred / (1. - y_pred))
+    y_true = K.cast(K.squeeze(y_true, -1), 'int32')
+    y_pred = K.cast(K.squeeze(y_pred, -1), 'float32')
+    logits = K.log(y_pred / (y_pred - 1.0))
     loss = lovasz_hinge(logits, y_true, per_image = True)
     return loss
 
+def logits_lovasz_loss(y_true, y_pred):
+    y_true = K.cast(K.squeeze(y_true, -1), 'int32')
+    logits = K.cast(K.squeeze(y_pred, -1), 'float32')
+    #logits = K.log(y_pred / (1. - y_pred))
+    loss = lovasz_hinge(logits, y_true, per_image = True)
+    return loss
 
 """
 Lovasz-Softmax and Jaccard hinge loss in Tensorflow
 Maxim Berman 2018 ESAT-PSI KU Leuven (MIT License)
 """
-
-from __future__ import print_function, division
 
 import tensorflow as tf
 import numpy as np
@@ -907,13 +915,4 @@ def keras_lovasz_softmax(labels,probas):
     #return lovasz_softmax(probas, labels)+binary_crossentropy(labels, probas)
     return lovasz_softmax(probas, labels)
 
-def mean_iou(y_true, y_pred):
-    prec = []
-    for t in np.arange(0.5, 1.0, 0.05):
-        y_pred_ = tf.to_int32(y_pred > t)
-        score, up_opt = tf.metrics.mean_iou(y_true, y_pred_, 2)
-        K.get_session().run(tf.local_variables_initializer())
-        with tf.control_dependencies([up_opt]):
-            score = tf.identity(score)
-        prec.append(score)
-    return K.mean(K.stack(prec), axis=0)
+
