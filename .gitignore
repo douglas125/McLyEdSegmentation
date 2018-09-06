@@ -2,6 +2,7 @@ tgs-salt-identification-challenge/
 content/
 .ipynb_checkpoints/
 __pycache__/
+checkpoints/
 .~TGSSeismic.ipynb
 *.zip
 model.png
