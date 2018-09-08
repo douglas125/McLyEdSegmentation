@@ -669,7 +669,7 @@ class LinkNet():
             name=name + '/0/transposed2d_2'
         )(final)
 
-        prediction = Softmax(name=name + '/0/softmax')(logits)
+        prediction = logits#Softmax(name=name + '/0/softmax')(logits)
 
         return Model(
             inputs=[
