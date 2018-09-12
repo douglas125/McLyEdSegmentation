@@ -734,7 +734,8 @@ def GetFullyAtrous():
 def lovasz_loss(y_true, y_pred):
     y_true = K.cast(K.squeeze(y_true, -1), 'int32')
     y_pred = K.cast(K.squeeze(y_pred, -1), 'float32')
-    logits = K.log(y_pred / (y_pred - 1.0))
+    #logits = K.log(y_pred / (y_pred - 1.0))
+    logits = y_pred
     loss = lovasz_hinge(logits, y_true, per_image = True)
     return loss
 
