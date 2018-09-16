@@ -389,7 +389,7 @@ class IntervalEvaluation(Callback):
             y_pred = self.model.predict(self.X_val, verbose=1)
             #first we have to threshhold
             t = 0.5
-            if using_lovasz:
+            if self.using_lovasz:
                 t = 0
             IOU_list=[]
             for j in range(y_pred.shape[0]):
