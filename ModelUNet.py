@@ -376,18 +376,21 @@ from keras.callbacks import Callback
 
 
 class IntervalEvaluation(Callback):
-    def __init__(self, validation_data=(), interval=10):
+    def __init__(self, validation_data=(), interval=1, using_lovasz=False):
         super(Callback, self).__init__()
 
         self.interval = interval
         self.X_val, self.y_val = validation_data
         self.score_list=[0]
+        self.using_lovasz = using_lovasz
 
     def on_epoch_end(self, epoch, logs={}):
         if epoch % self.interval == 0:
             y_pred = self.model.predict(self.X_val, verbose=1)
             #first we have to threshhold
-            t=0.5
+            t = 0.5
+            if using_lovasz:
+                t = 0
             IOU_list=[]
             for j in range(y_pred.shape[0]):
                 y_pred_ = np.array(y_pred[j,:,:] > t, dtype=bool)
