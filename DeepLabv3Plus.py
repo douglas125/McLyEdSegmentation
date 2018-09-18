@@ -47,6 +47,10 @@ from keras.applications import imagenet_utils
 from keras.utils import conv_utils
 from keras.utils.data_utils import get_file
 
+from keras import regularizers
+decay_weight = 1e-4
+#kernel_regularizer=regularizers.l2(decay_weight), bias_regularizer=regularizers.l2(decay_weight)
+
 WEIGHTS_PATH_X = "https://github.com/bonlime/keras-deeplab-v3-plus/releases/download/1.1/deeplabv3_xception_tf_dim_ordering_tf_kernels.h5"
 WEIGHTS_PATH_MOBILE = "https://github.com/bonlime/keras-deeplab-v3-plus/releases/download/1.1/deeplabv3_mobilenetv2_tf_dim_ordering_tf_kernels.h5"
 
@@ -134,11 +138,13 @@ def SepConv_BN(x, filters, prefix, stride=1, kernel_size=3, rate=1, depth_activa
     if not depth_activation:
         x = Activation(NonLinearActivation)(x)
     x = DepthwiseConv2D((kernel_size, kernel_size), strides=(stride, stride), dilation_rate=(rate, rate),
+                        kernel_regularizer=regularizers.l2(decay_weight), bias_regularizer=regularizers.l2(decay_weight),
                         padding=depth_padding, use_bias=False, name=prefix + '_depthwise')(x)
     x = BatchNormalization(name=prefix + '_depthwise_BN', epsilon=epsilon)(x)
     if depth_activation:
         x = Activation(NonLinearActivation)(x)
     x = Conv2D(filters, (1, 1), padding='same',
+               kernel_regularizer=regularizers.l2(decay_weight), bias_regularizer=regularizers.l2(decay_weight),
                use_bias=False, name=prefix + '_pointwise')(x)
     x = BatchNormalization(name=prefix + '_pointwise_BN', epsilon=epsilon)(x)
     if depth_activation:
@@ -164,6 +170,7 @@ def _conv2d_same(x, filters, prefix, stride=1, kernel_size=3, rate=1):
                       strides=(stride, stride),
                       padding='same', use_bias=False,
                       dilation_rate=(rate, rate),
+                      kernel_regularizer=regularizers.l2(decay_weight), bias_regularizer=regularizers.l2(decay_weight),
                       name=prefix)(x)
     else:
         kernel_size_effective = kernel_size + (kernel_size - 1) * (rate - 1)
@@ -176,6 +183,7 @@ def _conv2d_same(x, filters, prefix, stride=1, kernel_size=3, rate=1):
                       strides=(stride, stride),
                       padding='valid', use_bias=False,
                       dilation_rate=(rate, rate),
+                      kernel_regularizer=regularizers.l2(decay_weight), bias_regularizer=regularizers.l2(decay_weight),
                       name=prefix)(x)
 
 
@@ -243,8 +251,10 @@ def _inverted_res_block(inputs, expansion, stride, alpha, filters, block_id, ski
 
         x = Conv2D(expansion * in_channels, kernel_size=1, padding='same',
                    use_bias=False, activation=None,
+                   kernel_regularizer=regularizers.l2(decay_weight), bias_regularizer=regularizers.l2(decay_weight),
                    name=prefix + 'expand')(x)
         x = BatchNormalization(epsilon=1e-3, momentum=0.999,
+                               kernel_regularizer=regularizers.l2(decay_weight), bias_regularizer=regularizers.l2(decay_weight),
                                name=prefix + 'expand_BN')(x)
         x = Activation(relu6, name=prefix + 'expand_relu')(x)
     else:
@@ -252,6 +262,7 @@ def _inverted_res_block(inputs, expansion, stride, alpha, filters, block_id, ski
     # Depthwise
     x = DepthwiseConv2D(kernel_size=3, strides=stride, activation=None,
                         use_bias=False, padding='same', dilation_rate=(rate, rate),
+                        kernel_regularizer=regularizers.l2(decay_weight), bias_regularizer=regularizers.l2(decay_weight),
                         name=prefix + 'depthwise')(x)
     x = BatchNormalization(epsilon=1e-3, momentum=0.999,
                            name=prefix + 'depthwise_BN')(x)
@@ -261,6 +272,7 @@ def _inverted_res_block(inputs, expansion, stride, alpha, filters, block_id, ski
     # Project
     x = Conv2D(pointwise_filters,
                kernel_size=1, padding='same', use_bias=False, activation=None,
+               kernel_regularizer=regularizers.l2(decay_weight), bias_regularizer=regularizers.l2(decay_weight),
                name=prefix + 'project')(x)
     x = BatchNormalization(epsilon=1e-3, momentum=0.999,
                            name=prefix + 'project_BN')(x)
@@ -343,6 +355,7 @@ def Deeplabv3(weights='pascal_voc', input_tensor=None, input_shape=(512, 512, 3)
             atrous_rates = (6, 12, 18)
 
         x = Conv2D(32, (3, 3), strides=(2, 2),
+                   kernel_regularizer=regularizers.l2(decay_weight), bias_regularizer=regularizers.l2(decay_weight),
                    name='entry_flow_conv1_1', use_bias=False, padding='same')(img_input)
         x = BatchNormalization(name='entry_flow_conv1_1_BN')(x)
         x = Activation(NonLinearActivation)(x)
@@ -446,13 +459,16 @@ def Deeplabv3(weights='pascal_voc', input_tensor=None, input_shape=(512, 512, 3)
     #out_shape = int(np.ceil(input_shape[0] / OS))
     b4 = AveragePooling2D(pool_size=(int(np.ceil(input_shape[0] / OS)), int(np.ceil(input_shape[1] / OS))))(x)
     b4 = Conv2D(256, (1, 1), padding='same',
+                kernel_regularizer=regularizers.l2(decay_weight), bias_regularizer=regularizers.l2(decay_weight),
                 use_bias=False, name='image_pooling')(b4)
     b4 = BatchNormalization(name='image_pooling_BN', epsilon=1e-5)(b4)
     b4 = Activation(NonLinearActivation)(b4)
     b4 = BilinearUpsampling((int(np.ceil(input_shape[0] / OS)), int(np.ceil(input_shape[1] / OS))))(b4)
 
     # simple 1x1
-    b0 = Conv2D(256, (1, 1), padding='same', use_bias=False, name='aspp0')(x)
+    b0 = Conv2D(256, (1, 1), padding='same', use_bias=False,
+                kernel_regularizer=regularizers.l2(decay_weight), bias_regularizer=regularizers.l2(decay_weight),
+                name='aspp0')(x)
     b0 = BatchNormalization(name='aspp0_BN', epsilon=1e-5)(b0)
     b0 = Activation(NonLinearActivation, name='aspp0_activation')(b0)
 
@@ -474,6 +490,7 @@ def Deeplabv3(weights='pascal_voc', input_tensor=None, input_shape=(512, 512, 3)
         x = Concatenate()([b4, b0])
 
     x = Conv2D(256, (1, 1), padding='same',
+               kernel_regularizer=regularizers.l2(decay_weight), bias_regularizer=regularizers.l2(decay_weight),
                use_bias=False, name='concat_projection')(x)
     x = BatchNormalization(name='concat_projection_BN', epsilon=1e-5)(x)
     x = Activation(NonLinearActivation)(x)
@@ -487,6 +504,7 @@ def Deeplabv3(weights='pascal_voc', input_tensor=None, input_shape=(512, 512, 3)
         x = BilinearUpsampling(output_size=(int(np.ceil(input_shape[0] / 4)),
                                             int(np.ceil(input_shape[1] / 4))))(x)
         dec_skip1 = Conv2D(48, (1, 1), padding='same',
+                           kernel_regularizer=regularizers.l2(decay_weight), bias_regularizer=regularizers.l2(decay_weight),
                            use_bias=False, name='feature_projection0')(skip1)
         dec_skip1 = BatchNormalization(
             name='feature_projection0_BN', epsilon=1e-5)(dec_skip1)
@@ -503,7 +521,8 @@ def Deeplabv3(weights='pascal_voc', input_tensor=None, input_shape=(512, 512, 3)
     else:
         last_layer_name = 'custom_logits_semantic'
 
-    x = Conv2D(classes, (1, 1), padding='same', name=last_layer_name)(x)
+    x = Conv2D(classes, (1, 1), padding='same', name=last_layer_name,
+              kernel_regularizer=regularizers.l2(decay_weight), bias_regularizer=regularizers.l2(decay_weight))(x)
     x = BilinearUpsampling(output_size=(input_shape[0], input_shape[1]))(x)
 
     # Ensure that the model takes into account
