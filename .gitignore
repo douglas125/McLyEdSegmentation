@@ -14,3 +14,4 @@ train.zip
 model-*.*
 submiss*.*
 *.npy
+*.pkl

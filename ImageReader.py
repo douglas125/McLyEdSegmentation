@@ -8,7 +8,7 @@ import numpy as np
 
 
 def ReadSegmentationImages(folder, depthPd = None, readMasks = True, applyMedianFilter = False, 
-                           im_height=101, im_width=101):
+                           im_height=101, im_width=101, presetImgIds = None):
     """
     Reads images from a folder.
     
@@ -27,7 +27,11 @@ def ReadSegmentationImages(folder, depthPd = None, readMasks = True, applyMedian
     
     imgFolder = os.path.join(folder, 'images')
     maskFolder = os.path.join(folder, 'masks')
-    imgIds = next(os.walk(imgFolder))[2]
+    if presetImgIds is None:
+        imgIds = next(os.walk(imgFolder))[2]
+    else:
+        imgIds = presetImgIds
+        
     
     list_length = len([img for img in imgIds if img not in ignoreList])
     ignored_length = len([img for img in ignoreList if img in imgIds])
