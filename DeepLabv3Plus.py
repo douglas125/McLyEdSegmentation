@@ -48,7 +48,7 @@ from keras.utils import conv_utils
 from keras.utils.data_utils import get_file
 
 from keras import regularizers
-decay_weight = 1e-4
+decay_weight = 1e-7
 #kernel_regularizer=regularizers.l2(decay_weight), bias_regularizer=regularizers.l2(decay_weight)
 
 WEIGHTS_PATH_X = "https://github.com/bonlime/keras-deeplab-v3-plus/releases/download/1.1/deeplabv3_xception_tf_dim_ordering_tf_kernels.h5"
