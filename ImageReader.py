@@ -81,8 +81,9 @@ def ReadSegmentationImages(folder, depthPd = None, readMasks = True, applyMedian
             return src_images
 
         
-        
-ignoreList = ['05b69f83bf.png',
+ignoreList = []
+
+ignoreList2 = ['05b69f83bf.png',
  '0d8ed16206.png',
  '1019e6ed47.png',
  '10833853b3.png',

@@ -13,3 +13,4 @@ test.zip
 train.zip
 model-*.*
 submiss*.*
+*.npy
