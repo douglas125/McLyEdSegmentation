@@ -50,7 +50,8 @@ def ReadSegmentationImages(folder, depthPd = None, readMasks = True, applyMedian
         x = img_to_array(img)
 
         if depthPd is not None:
-            depthVal = depthPd[depthPd['id'] == id_.split('.')[0]].z.tolist()
+            depthVal = depthPd[depthPd['id'] == id_.replace('img','').split('.')[0]].z.tolist()
+                
             if len(depthVal) == 1:
                 depths[n,0,0,0] = depthVal[0]
             else:
@@ -69,7 +70,7 @@ def ReadSegmentationImages(folder, depthPd = None, readMasks = True, applyMedian
 
         src_images[n] = x[:,:,0:1]
         if readMasks:
-            mask = img_to_array(load_img( os.path.join(maskFolder, id_) ))
+            mask = img_to_array(load_img( os.path.join(maskFolder, id_.replace('img','msk') ) ))
             src_masks[n] = mask[:,:,0:1]
 
     print('Ignored {} files'.format(len(ignoreList)))
