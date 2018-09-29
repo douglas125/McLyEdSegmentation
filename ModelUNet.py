@@ -734,19 +734,18 @@ def GetFullyAtrous():
 
 
 ##Lovasz Loss
-def lovasz_loss(y_true, y_pred):
+def lovasz_loss(y_true, y_pred, per_image=True):
     y_true = K.cast(K.squeeze(y_true, -1), 'int32')
     y_pred = K.cast(K.squeeze(y_pred, -1), 'float32')
-    #logits = K.log(y_pred / (y_pred - 1.0))
-    logits = y_pred
-    loss = lovasz_hinge(logits, y_true, per_image = True)
+    logits = K.log(y_pred / (y_pred - 1.0))
+    loss = lovasz_hinge(logits, y_true, per_image = per_image)
     return loss
 
-def logits_lovasz_loss(y_true, y_pred):
+def logits_lovasz_loss(y_true, y_pred, per_image=True):
     y_true = K.cast(K.squeeze(y_true, -1), 'int32')
     logits = K.cast(K.squeeze(y_pred, -1), 'float32')
     #logits = K.log(y_pred / (1. - y_pred))
-    loss = lovasz_hinge(logits, y_true, per_image = True)
+    loss = lovasz_hinge(logits, y_true, per_image = per_image)
     return loss
 
 """
@@ -790,6 +789,7 @@ def lovasz_hinge(logits, labels, per_image=True, ignore=None):
             return lovasz_hinge_flat(log, lab)
         losses = tf.map_fn(treat_image, (logits, labels), dtype=tf.float32)
         loss = tf.reduce_mean(losses)
+        loss.set_shape((None,))
     else:
         loss = lovasz_hinge_flat(*flatten_binary_scores(logits, labels, ignore))
     return loss
